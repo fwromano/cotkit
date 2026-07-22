@@ -34,6 +34,7 @@ from .listener import CotListener
 from .model import CotEvent, classify_event, extract_geometry_points, parse_event
 from .ots import OTS_API_PORT, OTS_SSL_PORT, OTS_TCP_PORT, ots_client, ots_sender
 from .timestamps import cot_time, cot_time_offset
+from .udp import UdpCotListener, sanitize_cot_datagram
 
 __version__ = "0.1.0"
 
@@ -49,7 +50,7 @@ __all__ = [
     # client
     "TakClient", "TakSender", "TlsConfig", "SaIdentity", "Backoff", "open_tak_socket",
     # listener
-    "CotListener",
+    "CotListener", "UdpCotListener", "sanitize_cot_datagram",
     # OpenTAKServer conveniences
     "ots_client", "ots_sender", "OTS_TCP_PORT", "OTS_SSL_PORT", "OTS_API_PORT",
     # GeoJSON bridge

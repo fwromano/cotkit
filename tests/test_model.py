@@ -7,7 +7,8 @@ FULL = (
     'time="2026-07-14T12:00:00.000Z" start="2026-07-14T12:00:00.000Z" '
     'stale="2026-07-14T12:05:00.000Z">'
     '<point lat="30.6187" lon="-96.3365" hae="96.5" ce="12.0" le="9999999.0"/>'
-    '<detail><contact callsign="ALPHA 1"/><__group name="Cyan" role="HQ"/></detail>'
+    '<detail><contact callsign="ALPHA 1"/><__group name="Cyan" role="HQ"/>'
+    '<remarks>en route</remarks></detail>'
     "</event>"
 )
 
@@ -29,6 +30,9 @@ def test_parse_full_event():
     assert ev.event_type == "a-f-G-U-C"
     assert ev.how == "m-g"
     assert ev.callsign == "ALPHA 1"
+    assert ev.group_name == "Cyan"
+    assert ev.group_role == "HQ"
+    assert ev.remarks == "en route"
     assert abs(ev.lat - 30.6187) < 1e-9
     assert abs(ev.lon - -96.3365) < 1e-9
     assert ev.ce == 12.0

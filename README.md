@@ -131,6 +131,7 @@ there is public and documented in its docstring.
 | `TakClient` | Reconnecting subscriber/sender with SA keepalive |
 | `TakSender` | Lazy outbound sender: connect on demand, one retry (note 5) |
 | `CotListener` | Accept-side ingest |
+| `UdpCotListener` | One-event-per-datagram UDP ingest for simulators and sensor gateways |
 | `ots_client` / `ots_sender` | The above, pre-wired for OpenTAKServer ports |
 | `feature_to_event` / `event_to_feature` | GeoJSON ↔ CoT, both directions |
 | `query_features` / `esri_to_geojson` | ArcGIS Feature Services → GeoJSON (Field Maps layers) |

@@ -37,6 +37,9 @@ class CotEvent:
     ce: Optional[float] = None
     le: Optional[float] = None
     callsign: str = ""
+    group_name: str = ""
+    group_role: str = ""
+    remarks: str = ""
     course_deg: Optional[float] = None
     speed_mps: Optional[float] = None
     detail_xml: str = ""
@@ -125,6 +128,13 @@ def parse_event(xml_str: str) -> Optional[CotEvent]:
         contact = detail.find("contact")
         if contact is not None:
             ev.callsign = contact.get("callsign", "")
+        group = detail.find("__group")
+        if group is not None:
+            ev.group_name = group.get("name", "")
+            ev.group_role = group.get("role", "")
+        remarks = detail.find("remarks")
+        if remarks is not None and remarks.text:
+            ev.remarks = remarks.text
         track = detail.find("track")
         if track is not None:
             try:

@@ -28,7 +28,7 @@ def test_listener_receives_original_xml_and_typed_event():
     raw = []
     xml = build_event(
         "heli-1",
-        "a-f-A-M-H-R",
+        "a-f-A-M-H",
         43.615,
         -116.2023,
         callsign="Firehawk 1",

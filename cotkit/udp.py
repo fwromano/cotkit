@@ -102,6 +102,7 @@ class UdpCotListener:
         self.events_received = 0
         self.invalid_datagrams = 0
         self.callback_errors = 0
+        self.actual_socket_buffer = 0
 
         self._sock: Optional[socket.socket] = None
         self._thread: Optional[threading.Thread] = None
@@ -118,6 +119,10 @@ class UdpCotListener:
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, self.socket_buffer)
         except OSError:
             _LOG.warning("could not set UDP receive buffer to %d bytes", self.socket_buffer)
+        try:
+            self.actual_socket_buffer = sock.getsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF)
+        except OSError:
+            self.actual_socket_buffer = 0
         try:
             sock.bind((self.host, self.port))
             sock.settimeout(self.timeout)

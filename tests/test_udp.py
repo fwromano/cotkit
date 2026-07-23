@@ -41,6 +41,7 @@ def test_listener_receives_original_xml_and_typed_event():
         on_event=lambda event, peer: seen.append((event, peer)),
         on_raw=lambda event_xml, peer: raw.append(event_xml),
     ) as listener:
+        assert listener.actual_socket_buffer > 0
         send_udp(listener.port, b"transport-prefix " + xml.encode() + b"\x00\n")
         assert wait_for(lambda: len(seen) == 1)
 

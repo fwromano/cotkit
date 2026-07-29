@@ -82,3 +82,18 @@ def test_listener_stop_releases_port():
     port = listener.port
     listener.stop()
     UdpCotListener("127.0.0.1", port).start().stop()
+
+
+def test_listener_reports_effective_socket_buffer():
+    requested = 256 * 1024
+    with UdpCotListener(
+        "127.0.0.1",
+        0,
+        socket_buffer=requested,
+    ) as listener:
+        assert listener._sock is not None
+        assert listener.actual_socket_buffer == listener._sock.getsockopt(
+            socket.SOL_SOCKET,
+            socket.SO_RCVBUF,
+        )
+        assert listener.actual_socket_buffer > 0

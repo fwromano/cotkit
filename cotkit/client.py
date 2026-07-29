@@ -36,12 +36,16 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from typing import Callable, Iterable, Optional, Union
+from urllib.parse import urlsplit
 
 from .build import build_sa_event
 from .framing import CotStreamParser
 from .model import CotEvent, parse_event
 
-__all__ = ["TlsConfig", "SaIdentity", "Backoff", "open_tak_socket", "TakClient", "TakSender"]
+__all__ = [
+    "TlsConfig", "TakEndpoint", "SaIdentity", "Backoff",
+    "open_tak_socket", "TakClient", "TakSender",
+]
 
 _LOG = logging.getLogger("cotkit.client")
 
@@ -101,6 +105,110 @@ class TlsConfig:
                 password=self.client_password,
             )
         return context
+
+
+@dataclass(frozen=True)
+class TakEndpoint:
+    """Immutable address and transport policy for one TAK streaming port.
+
+    An endpoint deliberately describes transport, not a server product:
+    use ``tcp://`` for a plaintext CoT stream or ``tls://`` for a
+    TLS-wrapped stream, regardless of whether the peer is OpenTAKServer,
+    official TAK Server, or another compatible implementation.
+
+    ``TlsConfig`` is required by the TLS transport. The convenience
+    constructors create a default config when one is not supplied::
+
+        plain = TakEndpoint.from_url("tcp://tak-edge:8088")
+        secure = TakEndpoint.from_url(
+            "tls://tak.example.org:8089",
+            tls=TlsConfig(client_cert="client.pem", client_key="client.key",
+                          ca_cert="ca.pem"),
+        )
+
+    URLs contain only the non-secret network location. Certificate
+    paths and passwords stay in ``TlsConfig`` rather than URL query
+    parameters, keeping logs and process listings free of credentials.
+    """
+
+    host: str
+    port: int
+    tls: Optional[TlsConfig] = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.host, str) or not self.host.strip():
+            raise ValueError("TAK endpoint host must be a non-empty string")
+        if not isinstance(self.port, int) or isinstance(self.port, bool):
+            raise TypeError("TAK endpoint port must be an integer")
+        if not 1 <= self.port <= 65535:
+            raise ValueError("TAK endpoint port must be between 1 and 65535")
+        object.__setattr__(self, "host", self.host.strip())
+
+    @property
+    def scheme(self) -> str:
+        """``tcp`` for plaintext endpoints, otherwise ``tls``."""
+        return "tls" if self.tls is not None else "tcp"
+
+    @property
+    def url(self) -> str:
+        """Canonical non-secret URL suitable for logs and configuration."""
+        host = f"[{self.host}]" if ":" in self.host and not self.host.startswith("[") else self.host
+        return f"{self.scheme}://{host}:{self.port}"
+
+    @classmethod
+    def for_tcp(cls, host: str, port: int = 8088) -> "TakEndpoint":
+        """Construct a plaintext TCP endpoint."""
+        return cls(host, port)
+
+    @classmethod
+    def for_tls(
+        cls,
+        host: str,
+        port: int = 8089,
+        *,
+        tls: Optional[TlsConfig] = None,
+    ) -> "TakEndpoint":
+        """Construct a TLS endpoint, using default verification if omitted."""
+        return cls(host, port, tls or TlsConfig())
+
+    @classmethod
+    def from_url(
+        cls,
+        url: str,
+        *,
+        tls: Optional[TlsConfig] = None,
+    ) -> "TakEndpoint":
+        """Parse ``tcp://host[:port]`` or ``tls://host[:port]``.
+
+        The default ports are 8088 for TCP and 8089 for TLS. Paths,
+        query strings, fragments, and embedded credentials are rejected;
+        transport credentials belong in ``TlsConfig``.
+        """
+        if not isinstance(url, str) or not url.strip():
+            raise ValueError("TAK endpoint URL must be a non-empty string")
+        parsed = urlsplit(url.strip())
+        scheme = parsed.scheme.lower()
+        if scheme not in {"tcp", "tls"}:
+            raise ValueError("TAK endpoint URL scheme must be 'tcp' or 'tls'")
+        if parsed.username is not None or parsed.password is not None:
+            raise ValueError("TAK endpoint URL must not contain credentials")
+        if parsed.path or parsed.query or parsed.fragment:
+            raise ValueError("TAK endpoint URL must not contain a path, query, or fragment")
+        try:
+            host = parsed.hostname
+            port = parsed.port
+        except ValueError as exc:
+            raise ValueError(f"invalid TAK endpoint URL: {exc}") from exc
+        if not host:
+            raise ValueError("TAK endpoint URL must include a host")
+
+        if scheme == "tcp":
+            if tls is not None:
+                raise ValueError("TlsConfig cannot be used with a tcp:// endpoint")
+            return cls.for_tcp(host, port if port is not None else 8088)
+        return cls.for_tls(
+            host, port if port is not None else 8089, tls=tls,
+        )
 
 
 def _is_local_host(host: str) -> bool:
@@ -212,19 +320,40 @@ def _drain_inbound(sock: socket.socket) -> bool:
             pass
 
 
+def _coerce_endpoint(
+    host: Union[str, TakEndpoint],
+    port: Optional[int],
+    tls: Optional[TlsConfig],
+) -> TakEndpoint:
+    if isinstance(host, TakEndpoint):
+        if port is not None:
+            raise TypeError("port must not be supplied with a TakEndpoint")
+        if tls is not None:
+            raise TypeError("tls must not be supplied with a TakEndpoint")
+        return host
+    if not isinstance(host, str):
+        raise TypeError("host must be a string or TakEndpoint")
+    if port is None:
+        raise TypeError("port is required when host is a string")
+    return TakEndpoint(host, port, tls)
+
+
 def open_tak_socket(
-    host: str,
-    port: int,
+    host: Union[str, TakEndpoint],
+    port: Optional[int] = None,
     tls: Optional[TlsConfig] = None,
     connect_timeout: float = 10.0,
 ) -> socket.socket:
-    """Open a connected TCP (or TLS, if ``tls`` given) socket to a TAK port."""
-    raw = socket.create_connection((host, port), timeout=connect_timeout)
-    if tls is None:
+    """Open a TAK socket from an endpoint or the legacy host/port arguments."""
+    endpoint = _coerce_endpoint(host, port, tls)
+    raw = socket.create_connection(
+        (endpoint.host, endpoint.port), timeout=connect_timeout,
+    )
+    if endpoint.tls is None:
         return raw
     try:
-        context = tls.build_context(host)
-        return context.wrap_socket(raw, server_hostname=host)
+        context = endpoint.tls.build_context(endpoint.host)
+        return context.wrap_socket(raw, server_hostname=endpoint.host)
     except Exception:
         raw.close()
         raise
@@ -261,8 +390,8 @@ class TakClient:
 
     def __init__(
         self,
-        host: str,
-        port: int,
+        host: Union[str, TakEndpoint],
+        port: Optional[int] = None,
         *,
         tls: Optional[TlsConfig] = None,
         identity: Optional[SaIdentity] = None,
@@ -278,9 +407,10 @@ class TakClient:
         max_buffer: Optional[int] = None,
         outbox_limit: int = DEFAULT_OUTBOX_LIMIT,
     ):
-        self.host = host
-        self.port = port
-        self.tls = tls
+        self.endpoint = _coerce_endpoint(host, port, tls)
+        self.host = self.endpoint.host
+        self.port = self.endpoint.port
+        self.tls = self.endpoint.tls
         self.identity = identity or SaIdentity()
         self.on_event = on_event
         self.on_raw = on_raw
@@ -375,7 +505,7 @@ class TakClient:
             self._sleep_interruptible(self.backoff.next_delay())
 
     def _connect_once(self) -> None:
-        sock = open_tak_socket(self.host, self.port, self.tls)
+        sock = open_tak_socket(self.endpoint)
         sock.settimeout(self.read_timeout)
         self._sock = sock
         if not self._running:  # stop() raced the connect
@@ -472,17 +602,18 @@ class TakSender:
 
     def __init__(
         self,
-        host: str,
-        port: int,
+        host: Union[str, TakEndpoint],
+        port: Optional[int] = None,
         *,
         tls: Optional[TlsConfig] = None,
         drop_on_failure: bool = False,
         separator: bytes = b"\n",
         connect_timeout: float = 10.0,
     ):
-        self.host = host
-        self.port = port
-        self.tls = tls
+        self.endpoint = _coerce_endpoint(host, port, tls)
+        self.host = self.endpoint.host
+        self.port = self.endpoint.port
+        self.tls = self.endpoint.tls
         self.drop_on_failure = drop_on_failure
         self.separator = separator
         self.connect_timeout = connect_timeout
@@ -515,7 +646,9 @@ class TakSender:
         if self._sock is not None and _drain_inbound(self._sock):
             self._close_locked()
         if self._sock is None:
-            self._sock = open_tak_socket(self.host, self.port, self.tls, self.connect_timeout)
+            self._sock = open_tak_socket(
+                self.endpoint, connect_timeout=self.connect_timeout,
+            )
         for payload in payloads:
             self._sock.sendall(payload + self.separator)
 

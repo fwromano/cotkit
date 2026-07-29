@@ -100,6 +100,28 @@ client.run_forever()   # owns this thread and reconnects forever;
 `client.send(xml)` works from any thread at any time — events queue
 until the connection is up and survive reconnects.
 
+The same application can switch between plaintext and mutual TLS
+without naming a server product. Build one immutable endpoint and pass
+it to every TAK connection:
+
+```python
+from cotkit import TakClient, TakEndpoint, TakSender, TlsConfig
+
+endpoint = TakEndpoint.from_url(
+    "tls://tak.example.org:8089",
+    tls=TlsConfig(client_cert="bridge.pem", client_key="bridge.key",
+                  ca_cert="ca.pem"),
+)
+sender = TakSender(endpoint)
+client = TakClient(endpoint, on_event=print)
+```
+
+Use `tcp://host:8088` for a plaintext stream. Ports default to 8088 for
+TCP and 8089 for TLS when omitted. Endpoint URLs never carry
+credentials; certificate paths and passwords belong in `TlsConfig`.
+The original `TakClient(host, port, tls=...)` and
+`TakSender(host, port, tls=...)` forms remain supported.
+
 Going the other way for GIS consumers: `event_to_feature(ev)` turns any
 received event back into a GeoJSON Feature.
 
@@ -130,6 +152,7 @@ there is public and documented in its docstring.
 | `parse_event` / `CotEvent` | XML → typed event: point, geometry, track, dedup signature (note 2) |
 | `TakClient` | Reconnecting subscriber/sender with SA keepalive |
 | `TakSender` | Lazy outbound sender: connect on demand, one retry (note 5) |
+| `TakEndpoint` | Immutable TCP/TLS address shared by clients and senders |
 | `CotListener` | Accept-side ingest |
 | `UdpCotListener` | One-event-per-datagram UDP ingest for simulators and sensor gateways |
 | `ots_client` / `ots_sender` | The above, pre-wired for OpenTAKServer ports |

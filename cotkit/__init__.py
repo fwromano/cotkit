@@ -27,7 +27,15 @@ from .build import (
     build_sa_event,
     resolve_event_type,
 )
-from .client import Backoff, SaIdentity, TakClient, TakSender, TlsConfig, open_tak_socket
+from .client import (
+    Backoff,
+    SaIdentity,
+    TakClient,
+    TakEndpoint,
+    TakSender,
+    TlsConfig,
+    open_tak_socket,
+)
 from .framing import CotStreamParser
 from .geojson import event_to_feature, feature_to_event, feature_to_events
 from .listener import CotListener
@@ -48,7 +56,8 @@ __all__ = [
     "build_event", "build_sa_event", "build_delete_event", "build_ping", "resolve_event_type",
     "ICON_SHORTCUTS", "argb_to_signed_int_string",
     # client
-    "TakClient", "TakSender", "TlsConfig", "SaIdentity", "Backoff", "open_tak_socket",
+    "TakClient", "TakSender", "TakEndpoint", "TlsConfig",
+    "SaIdentity", "Backoff", "open_tak_socket",
     # listener
     "CotListener", "UdpCotListener", "sanitize_cot_datagram",
     # OpenTAKServer conveniences

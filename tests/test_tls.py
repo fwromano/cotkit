@@ -13,7 +13,14 @@ import subprocess
 import pytest
 
 from cotkit.build import build_event
-from cotkit.client import Backoff, SaIdentity, TakClient, TakSender, TlsConfig
+from cotkit.client import (
+    Backoff,
+    SaIdentity,
+    TakClient,
+    TakEndpoint,
+    TakSender,
+    TlsConfig,
+)
 from cotkit.testing import FakeTakServer, wait_for
 
 pytestmark = pytest.mark.skipif(
@@ -90,3 +97,26 @@ def test_client_roundtrip_over_tls(server_ctx):
             assert seen[0].uid == "from-server"
             client.send(build_event("up", "a-f-G", 1.0, 1.0))
             assert wait_for(lambda: any('uid="up"' in x for x in server.received))
+
+
+def test_shared_endpoint_wires_tls_to_sender_and_client(server_ctx):
+    with FakeTakServer(ssl_context=server_ctx) as server:
+        endpoint = TakEndpoint.for_tls(
+            server.host, server.port, tls=tls_config(),
+        )
+        seen = []
+        client = TakClient(
+            endpoint,
+            identity=SaIdentity(uid="endpoint-client", callsign="ENDPOINT"),
+            on_event=seen.append,
+            read_timeout=0.05,
+            backoff=Backoff(initial=0.05, maximum=0.1, jitter=0.0),
+        )
+        with client, TakSender(endpoint) as sender:
+            assert wait_for(lambda: server.connection_count == 1)
+            sender.send(build_event("endpoint-tls", "a-f-G", 30.0, -96.0))
+            assert wait_for(
+                lambda: any('uid="endpoint-tls"' in x for x in server.received)
+            )
+            server.broadcast(build_event("endpoint-down", "a-f-G", 31.0, -97.0))
+            assert wait_for(lambda: any(ev.uid == "endpoint-down" for ev in seen))
